@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Аудиовизуализация</title>
+    <!-- Загрузка Chart.js через jsDelivr с использованием HTTPS -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Загрузка Lodash через jsDelivr с использованием HTTPS -->
     <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
 </head>
 <body>
@@ -77,7 +79,7 @@
 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new AudioContext();//(window.AudioContext || window.webkitAudioContext)();
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioContext.createMediaStreamSource(stream);
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 2048;
@@ -118,6 +120,7 @@
                 startButton.disabled = true;
                 stopButton.disabled = false;
             } catch (error) {
+                console.error('Ошибка доступа к микрофону:', error);
                 alert('Ошибка доступа к микрофону: ' + error.message);
             }
         });
