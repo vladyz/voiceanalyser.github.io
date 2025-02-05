@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Аудиовизуализация</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+</head>
+<body>
+    <button id="startButton">Начать</button>
+    <button id="stopButton" disabled>Остановить</button>
+    <select id="sampleRate">
+        <option value="44100">44100 Гц</option>
+        <option value="48000">48000 Гц</option>
+    </select>
+    <select id="bitDepth">
+        <option value="16">16 бит</option>
+        <option value="24">24 бит</option>
+    </select>
+    <canvas id="audioChart" width="2060" height="400"></canvas>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const sampleRateSelect = document.getElementById('sampleRate');
+        const bitDepthSelect = document.getElementById('bitDepth');
+        const audioChartCanvas = document.getElementById('audioChart').getContext('2d');
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let animationFrameId;
+        let chart;
+
+        const downsampleFactor = 20; // Коэффициент усреднения
+        const chartWidth = 2060;
+        const stepWidth = 103;
+        let cnt;
+
+        let timeStamps = new Uint32Array(stepWidth);
+
+        const chartConfig = {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Аудиоданные',
+                    data: [],
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1,
+                    fill: false,
+                    pointStyle: false
+                }]
+            },
+            options: {
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom'
+                    },
+                    y: {
+                        beginAtZero: true
+                    }
+                },
+                animation: {
+                    duration: 0 // Отключаем анимацию
+                }
+            }
+        };
+
+        chart = new Chart(audioChartCanvas, chartConfig);
+
+        startButton.addEventListener('click', async () => {
+            const sampleRate = parseInt(sampleRateSelect.value, 10);
+            chart.config.options.scales.y.max = 50;
+            chart.config.options.scales.y.min = -50;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new AudioContext();//(window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.fftSize);
+
+                for (let i = 0; i < stepWidth; i++) {
+                    timeStamps[i] = i;
+                }
+
+                function updateChart() {
+                    analyser.getByteTimeDomainData(dataArray);
+                    let downsampledData = downsample(dataArray, downsampleFactor);
+
+                    downsampledData = downsampledData.map(number => (number - 128));
+                    chart.data.datasets[0].data.push(...downsampledData);
+                    chart.data.labels.push(...timeStamps);
+                    timeStamps = timeStamps.map(number => (number + stepWidth));
+
+                    if (chart.data.labels.length > (chartWidth + stepWidth)) {
+                        chart.data.datasets[0].data.splice(0, stepWidth);
+                        chart.data.labels.splice(0, stepWidth);
+                        chart.config.options.scales.x.min = chart.data.labels[0];
+                        chart.config.options.scales.x.max = chart.data.labels[chartWidth];
+                    }
+                    chart.update();
+
+                    animationFrameId = requestAnimationFrame(updateChart);
+                }
+
+                function downsample(data, factor) {
+                    const chunks = _.chunk(data, factor);
+                    const downsampledData = chunks.map(chunk => _.mean(chunk));
+                    return downsampledData;
+                }
+
+                updateChart();
+                startButton.disabled = true;
+                stopButton.disabled = false;
+            } catch (error) {
+                alert('Ошибка доступа к микрофону: ' + error.message);
+            }
+        });
+
+        stopButton.addEventListener('click', () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        });
+    </script>
+</body>
+</html>
