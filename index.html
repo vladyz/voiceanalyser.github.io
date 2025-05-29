@@ -4,113 +4,196 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Аудиовизуализация</title>
-    <!-- Загрузка Chart.js через jsDelivr с использованием HTTPS -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Загрузка Lodash через jsDelivr с использованием HTTPS -->
     <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <style>
+        .chart-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        canvas {
+            max-width: 100%;
+            height: auto;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+    </style>
 </head>
 <body>
-    <button id="startButton">Начать</button>
-    <button id="stopButton" disabled>Остановить</button>
-    <select id="bitDepth">
-        <option value="16">16 бит</option>
-        <option value="24">24 бит</option>
-    </select>
-    <canvas id="audioChart" width="2060" height="400"></canvas>
+    <div class="controls">
+        <button id="startButton">Начать</button>
+        <button id="stopButton" disabled>Остановить</button>
+        <select id="bitDepth">
+            <option value="16">16 бит</option>
+            <option value="24">24 бит</option>
+        </select>
+    </div>
+    
+    <div class="chart-container">
+        <canvas id="timeDomainChart" width="800" height="200"></canvas>
+        <canvas id="frequencyDomainChart" width="800" height="200"></canvas>
+    </div>
 
     <script>
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const bitDepthSelect = document.getElementById('bitDepth');
-        const audioChartCanvas = document.getElementById('audioChart').getContext('2d');
+        
+        // Инициализация графиков
+        const timeCtx = document.getElementById('timeDomainChart').getContext('2d');
+        const freqCtx = document.getElementById('frequencyDomainChart').getContext('2d');
+        
         let audioContext;
         let analyser;
-        let dataArray;
+        let frequencyAnalyser;
+        let timeDataArray;
+        let freqDataArray;
         let animationFrameId;
-        let chart;
+        let timeChart;
+        let freqChart;
 
-        const downsampleFactor = 40; // Коэффициент усреднения
-        const chartWidth = 1040;
-        const stepWidth = 52;
-        let cnt;
-
-        let timeStamps = new Uint32Array(stepWidth);
-
-        const chartConfig = {
+        // Конфигурация графиков
+        const timeChartConfig = {
             type: 'line',
             data: {
                 labels: [],
                 datasets: [{
-                    label: 'Аудиоданные',
+                    label: 'Временная область',
                     data: [],
                     borderColor: 'rgba(75, 192, 192, 1)',
                     borderWidth: 1,
                     fill: false,
-                    pointStyle: false
+                    pointRadius: 0
                 }]
             },
             options: {
+                responsive: true,
                 scales: {
                     x: {
-                        type: 'linear',
-                        position: 'bottom'
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Время (отсчеты)'
+                        }
                     },
                     y: {
-                        beginAtZero: true
+                        min: -1,
+                        max: 1,
+                        title: {
+                            display: true,
+                            text: 'Амплитуда'
+                        }
                     }
                 },
                 animation: {
-                    duration: 0 // Отключаем анимацию
+                    duration: 0
                 }
             }
         };
 
-        chart = new Chart(audioChartCanvas, chartConfig);
+        const freqChartConfig = {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Частотный спектр',
+                    data: [],
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Частота (Гц)'
+                        }
+                    },
+                    y: {
+                        min: 0,
+                        max: 255,
+                        title: {
+                            display: true,
+                            text: 'Мощность'
+                        }
+                    }
+                },
+                animation: {
+                    duration: 0
+                }
+            }
+        };
+
+        // Инициализация графиков
+        timeChart = new Chart(timeCtx, timeChartConfig);
+        freqChart = new Chart(freqCtx, freqChartConfig);
 
         startButton.addEventListener('click', async () => {
-            chart.config.options.scales.y.max = 50;
-            chart.config.options.scales.y.min = -50;
-
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioContext.createMediaStreamSource(stream);
+                
+                // Анализатор для временной области
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 2048;
+                timeDataArray = new Float32Array(analyser.fftSize);
+                
+                // Анализатор для частотной области
+                frequencyAnalyser = audioContext.createAnalyser();
+                frequencyAnalyser.fftSize = 512;
+                freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
+                
+                // Подготовка меток для частотного графика
+                const sampleRate = audioContext.sampleRate;
+                const freqLabels = Array.from(
+                    { length: frequencyAnalyser.frequencyBinCount },
+                    (_, i) => Math.round(i * sampleRate / (2 * frequencyAnalyser.frequencyBinCount))
+                );
+                freqChart.data.labels = freqLabels;
+                
                 source.connect(analyser);
-                dataArray = new Uint8Array(analyser.fftSize);
-
-                for (let i = 0; i < stepWidth; i++) {
-                    timeStamps[i] = i;
-                }
-
-                function updateChart() {
-                    analyser.getByteTimeDomainData(dataArray);
-                    let downsampledData = downsample(dataArray, downsampleFactor);
-
-                    downsampledData = downsampledData.map(number => (number - 128));
-                    chart.data.datasets[0].data.push(...downsampledData);
-                    chart.data.labels.push(...timeStamps);
-                    timeStamps = timeStamps.map(number => (number + stepWidth));
-
-                    if (chart.data.labels.length > (chartWidth + stepWidth)) {
-                        chart.data.datasets[0].data.splice(0, stepWidth);
-                        chart.data.labels.splice(0, stepWidth);
-                        chart.config.options.scales.x.min = chart.data.labels[0];
-                        chart.config.options.scales.x.max = chart.data.labels[chartWidth];
+                source.connect(frequencyAnalyser);
+                
+                // Очистка предыдущих данных
+                timeChart.data.datasets[0].data = [];
+                timeChart.data.labels = [];
+                
+                function updateCharts() {
+                    // Обновление временного графика
+                    analyser.getFloatTimeDomainData(timeDataArray);
+                    timeChart.data.datasets[0].data = Array.from(timeDataArray);
+                    
+                    // Обновление меток времени
+                    if (timeChart.data.labels.length === 0) {
+                        timeChart.data.labels = Array.from(
+                            { length: timeDataArray.length },
+                            (_, i) => i
+                        );
                     }
-                    chart.update();
-
-                    animationFrameId = requestAnimationFrame(updateChart);
+                    
+                    // Обновление частотного графика
+                    frequencyAnalyser.getByteFrequencyData(freqDataArray);
+                    freqChart.data.datasets[0].data = Array.from(freqDataArray);
+                    
+                    timeChart.update();
+                    freqChart.update();
+                    
+                    animationFrameId = requestAnimationFrame(updateCharts);
                 }
-
-                function downsample(data, factor) {
-                    const chunks = _.chunk(data, factor);
-                    const downsampledData = chunks.map(chunk => _.mean(chunk));
-                    return downsampledData;
-                }
-
-                updateChart();
+                
+                updateCharts();
                 startButton.disabled = true;
                 stopButton.disabled = false;
             } catch (error) {
