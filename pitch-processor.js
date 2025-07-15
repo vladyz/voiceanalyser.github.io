@@ -2,7 +2,7 @@ class PitchProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.sampleRate = 44100;
-    this.bufferSize = 1024; // Увеличиваем размер буфера для более точного анализа
+    this.bufferSize = 2048; // Увеличиваем размер буфера для более точного анализа
     this.buffer = new Float32Array(this.bufferSize);
     this.bufferIndex = 0;
     this.THRESHOLD = 0.1; // Более строгий порог

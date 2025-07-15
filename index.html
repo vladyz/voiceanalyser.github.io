@@ -68,6 +68,7 @@
         let pitchChart;
 
         const MAX_FREQ_TO_DISPLAY = 5000;
+        const MAX_PITHCES_TO_DISPLAY = 20;
 
         // Конфигурация графиков
         const timeChartConfig = {
@@ -94,8 +95,8 @@
                         }
                     },
                     y: {
-                        min: -0.1,
-                        max: 0.1,
+                        // min: -1,
+                        // max: 1,
                         title: {
                             display: true,
                             text: 'Амплитуда'
@@ -165,7 +166,7 @@
             },
             x: {
                 min: 0,
-                max: 100,
+                max: MAX_PITHCES_TO_DISPLAY,
                 title: { text: 'Время' }
             }
             }
@@ -224,7 +225,7 @@
             pitchChart.data.labels.push(k);
             k++;
 
-            if (pitchChart.data.labels.length >100){
+            if (pitchChart.data.labels.length >MAX_PITHCES_TO_DISPLAY){
                 pitchChart.data.labels.shift();
                 pitchChart.data.datasets[0].data.shift();  
                 pitchChart.config.options.scales.x.max = k;
@@ -267,7 +268,7 @@
                 frequencyAnalyser = audioContext.createAnalyser();
                 frequencyAnalyser.smoothingTimeConstant = 0.1;
 
-                frequencyAnalyser.fftSize = 4096; //512
+                frequencyAnalyser.fftSize = 2048; //512
                 const freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
                 const sampleRate = audioContext.sampleRate;
 
