@@ -2,8 +2,8 @@
 class AudioVisualizerProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        const DEC_CHUNK_SIZE = 1024; 
-        const DEC_FACTOR = 8;
+        const DEC_CHUNK_SIZE = 128; 
+        const DEC_FACTOR = 32;
         this.decchunkSize = DEC_CHUNK_SIZE; // Размер выходного блока
         this.decimationFactor = DEC_FACTOR; // Коэффициент децимации
         this.rawchunkSize = DEC_CHUNK_SIZE * DEC_FACTOR; // Размер выходного блока
@@ -34,7 +34,7 @@ class AudioVisualizerProcessor extends AudioWorkletProcessor {
         for (let i = 0; i < outputLength; i = i + this.decimationFactor) {
             //this.rawbuffer[this.rawbufferIndex++] = inputData[i];
 
-            // 2. Децимация (каждый 6-й сэмпл)
+            // 2. Децимация 
             this.decbuffer[this.decbufferIndex++]= inputData[i];
             
             if (this.decbufferIndex >= this.decchunkSize) {
