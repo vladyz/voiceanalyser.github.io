@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Аудиовизуализация</title>
+    <title>Аудиовизуализация с AudioWorklet</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
     <style>
         .chart-container {
             display: flex;
@@ -15,7 +14,7 @@
         }
         canvas {
             max-width: 100%;
-            height: 400px; /* Увеличенная высота графиков */
+            height: 400px;
             background: #f5f5f5;
             border-radius: 4px;
         }
@@ -30,34 +29,45 @@
     <div class="controls">
         <button id="startButton">Начать</button>
         <button id="stopButton" disabled>Остановить</button>
-        <select id="bitDepth">
-            <option value="16">16 бит</option>
-            <option value="24">24 бит</option>
-        </select>
     </div>
     
     <div class="chart-container">
         <canvas id="timeDomainChart" width="800" height="400"></canvas>
         <canvas id="frequencyDomainChart" width="800" height="400"></canvas>
+        <canvas id="pitchDomainChart" width="800" height="400"></canvas>
     </div>
+
+    <div class="pitch-display">
+        <div id="currentNote" class="note-display"></div>
+    </div>
+
+    <style>
+        .note-display {
+            font-size: 32px;
+            text-align: center;
+            margin: 10px 0;
+        }
+    </style>
 
     <script>
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
-        const bitDepthSelect = document.getElementById('bitDepth');
         
         // Инициализация графиков
         const timeCtx = document.getElementById('timeDomainChart').getContext('2d');
         const freqCtx = document.getElementById('frequencyDomainChart').getContext('2d');
+        const pitchCtx = document.getElementById('pitchDomainChart').getContext('2d');
         
         let audioContext;
-        let analyser;
+        let visualizerNode;
         let frequencyAnalyser;
-        let timeDataArray;
         let freqDataArray;
-        let animationFrameId;
+        let updateInterval;
         let timeChart;
         let freqChart;
+        let pitchChart;
+
+        const MAX_FREQ_TO_DISPLAY = 5000;
 
         // Конфигурация графиков
         const timeChartConfig = {
@@ -84,8 +94,8 @@
                         }
                     },
                     y: {
-                        min: -1,
-                        max: 1,
+                        min: -0.1,
+                        max: 0.1,
                         title: {
                             display: true,
                             text: 'Амплитуда'
@@ -115,6 +125,8 @@
                 scales: {
                     x: {
                         display: true,
+                        min: 0,
+                        max: MAX_FREQ_TO_DISPLAY,
                         title: {
                             display: true,
                             text: 'Частота (Гц)'
@@ -135,86 +147,206 @@
             }
         };
 
+        const pitchChartConfig = {
+        type: 'line',
+        data: {
+            datasets: [{
+            label: 'Основной тон (Hz)',
+            borderColor: 'rgb(255, 99, 132)',
+            data: []
+            }]
+        },
+        options: {
+            scales: {
+            y: {
+                // min: 50,
+                // max: 1000,
+                title: { text: 'Частота (Hz)' }
+            },
+            x: {
+                min: 0,
+                max: 100,
+                title: { text: 'Время' }
+            }
+            }
+        }
+        };
+
+        // Переменная для хранения всех сэмплов
+        let allSamples = [];
+        //const CHUNK_SIZE = 512;
+        const MAX_SAMPLES = 4096;
+        let cnt = 0;
+
+        // Новый метод для загрузки аудиопроцессора
+        async function initAudioWorklet() {
+            try {
+                // Создаем AudioContext
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Регистрируем процессор
+                await audioContext.audioWorklet.addModule('audio-processor.js');
+                console.log('AudioWorklet processor успешно загружен');
+                return true;
+            } catch (error) {
+                console.error('Ошибка загрузки AudioWorklet:', error);
+                return false;
+            }
+        }
+
+                // Новый метод для загрузки аудиопроцессора
+        async function initPitchWorklet() {
+            try {
+                // Регистрируем процессор
+                //audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await audioContext.audioWorklet.addModule('pitch-processor.js');
+                console.log('PitchWorklet processor успешно загружен');
+                return true;
+            } catch (error) {
+                console.error('Ошибка загрузки PitchWorklet:', error);
+                return false;
+            }
+        }
+
         // Инициализация графиков
         timeChart = new Chart(timeCtx, timeChartConfig);
         freqChart = new Chart(freqCtx, freqChartConfig);
+        pitchChart = new Chart(pitchCtx, pitchChartConfig);
+        let k=0;
+
+        function updatePitchChart(currentPitch) {
+            //const note = frequencyToNote(currentPitch);
+            //document.getElementById('currentNote').textContent = note;
+            //console.log(currentPitch);
+            if (currentPitch == 0)
+                return;
+            pitchChart.data.datasets[0].data.push(currentPitch);
+            pitchChart.data.labels.push(k);
+            k++;
+
+            if (pitchChart.data.labels.length >100){
+                pitchChart.data.labels.shift();
+                pitchChart.data.datasets[0].data.shift();  
+                pitchChart.config.options.scales.x.max = k;
+            }
+            pitchChart.update('none');
+        }
+
+        // function frequencyToNote(freq) {
+        //     const A4 = 440;
+        //     const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        //     const n = Math.round(12 * Math.log2(freq / A4)) + 57;
+        //     return notes[n % 12] + Math.floor(n/12);
+        // }
 
         startButton.addEventListener('click', async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioContext.createMediaStreamSource(stream);
+                // Инициализируем AudioWorklet
+                workletReady = await initAudioWorklet();
+                if (!workletReady) {
+                    throw new Error('Не удалось загрузить AudioWorklet');
+                }
+                workletReady = await initPitchWorklet();
+                if (!workletReady) {
+                    throw new Error('Не удалось загрузить AudioWorklet');
+                }
                 
-                // Анализатор для временной области
-                analyser = audioContext.createAnalyser();
-                analyser.fftSize = 2048;
-                timeDataArray = new Float32Array(analyser.fftSize);
+                // Получаем доступ к микрофону
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {        
+                        echoCancellation: false,
+                        noiseSuppression: false, //true
+                        autoGainControl: false,  // Самое важное!
+                        latency: 0.01  // Минимальная задержка //true 
+                    }
+                });
                 
-                // Анализатор для частотной области
+                // Создаем узлы обработки
+                visualizerNode = new AudioWorkletNode(audioContext, 'audio-visualizer-processor');
+                pitchProcessor = new AudioWorkletNode(audioContext, 'pitch-processor');
                 frequencyAnalyser = audioContext.createAnalyser();
-                frequencyAnalyser.fftSize = 512;
-                freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
-                
-                // Подготовка меток для частотного графика
+                frequencyAnalyser.smoothingTimeConstant = 0.1;
+
+                frequencyAnalyser.fftSize = 4096; //512
+                const freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
                 const sampleRate = audioContext.sampleRate;
+
+                const totalBins = frequencyAnalyser.frequencyBinCount;
+                const binsToShow = Math.floor((MAX_FREQ_TO_DISPLAY / (sampleRate / 2)) * totalBins);
+
                 const freqLabels = Array.from(
-                    { length: frequencyAnalyser.frequencyBinCount },
-                    (_, i) => Math.round(i * sampleRate / (2 * frequencyAnalyser.frequencyBinCount))
+                    { length: binsToShow },
+                    (_, i) => Math.round(i * sampleRate / (2 * totalBins))
                 );
                 freqChart.data.labels = freqLabels;
                 
-                source.connect(analyser);
+                // Подключаем узлы
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(visualizerNode);
                 source.connect(frequencyAnalyser);
-                
-                // Очистка предыдущих данных
-                timeChart.data.datasets[0].data = [];
-                timeChart.data.labels = [];
-                
-                function updateCharts() {
-                    // Обновление временного графика
-                    analyser.getFloatTimeDomainData(timeDataArray);
-                    timeChart.data.datasets[0].data = Array.from(timeDataArray);
-                    
-                    // Обновление меток времени
-                    if (timeChart.data.labels.length === 0) {
-                        timeChart.data.labels = Array.from(
-                            { length: timeDataArray.length },
-                            (_, i) => i
-                        );
+                source.connect(pitchProcessor);
+                pitchProcessor.connect(audioContext.destination);
+
+                pitchProcessor.port.onmessage = (event) => {
+                    if (event.data.type === 'pitch') {
+                        updatePitchChart(event.data.frequency);
+                        //console.log(event.data.frequency);
                     }
-                    
-                    // Обновление частотного графика
-                    frequencyAnalyser.getByteFrequencyData(freqDataArray);
-                    freqChart.data.datasets[0].data = Array.from(freqDataArray);
-                    
-                    timeChart.update();
-                    freqChart.update();
-                    
-                    animationFrameId = requestAnimationFrame(updateCharts);
-                }
+                };
                 
-                updateCharts();
+                // Настройка обработки данных
+                visualizerNode.port.onmessage = (event) => {
+                    if (event.data.decsamples) {
+                        //Добавляем новые сэмплы
+                        allSamples = [...allSamples, ...event.data.decsamples];
+                        
+                        // Если превысили максимальное количество - обрезаем начало
+                        if (allSamples.length > MAX_SAMPLES) {
+                            const removeCount = allSamples.length - MAX_SAMPLES;
+                            allSamples = allSamples.slice(removeCount);
+                        }
+                        
+                        // Обновляем график
+                        timeChart.data.datasets[0].data = allSamples;
+                        timeChart.data.labels = allSamples.map((_, i) => i);
+                        //console.log("new data!");
+
+                        cnt++;
+                        if (cnt == 2){
+                            timeChart.update();
+                            frequencyAnalyser.getByteFrequencyData(freqDataArray);
+                            freqChart.data.datasets[0].data = Array.from(freqDataArray.slice(0, binsToShow));
+                            freqChart.update();                            
+                            cnt=0;
+                        }
+                        
+                    }
+                };
+                
+                
                 startButton.disabled = true;
                 stopButton.disabled = false;
+                
             } catch (error) {
-                console.error('Ошибка доступа к микрофону:', error);
-                alert('Ошибка доступа к микрофону: ' + error.message);
+                console.error('Ошибка:', error);
+                alert('Ошибка: ' + error.message);
             }
         });
 
         stopButton.addEventListener('click', () => {
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-                animationFrameId = null;
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
             }
             if (audioContext) {
                 audioContext.close();
                 audioContext = null;
             }
+            // Очищаем данные
+            allSamples = [];
             startButton.disabled = false;
             stopButton.disabled = true;
         });
     </script>
 </body>
 </html>
-Изменения
