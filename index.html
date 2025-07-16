@@ -452,7 +452,7 @@
                 frequencyAnalyser = audioContext.createAnalyser();
                 frequencyAnalyser.smoothingTimeConstant = 0.1;
 
-                frequencyAnalyser.fftSize = 8192; //512
+                frequencyAnalyser.fftSize = 2048; //512
                 const freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
                 const sampleRate = audioContext.sampleRate;
 
