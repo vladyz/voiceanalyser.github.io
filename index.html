@@ -72,6 +72,8 @@
 
         const MAX_FREQ_TO_DISPLAY = 20000;
         const MAX_PITHCES_TO_DISPLAY = 50;
+        const VIBRATO_RMS_TRESHOLD = 0.002;
+        const VIBRATO_SAMPLE_RATE = 22;
 
         // Конфигурация графиков
         const timeChartConfig = {
@@ -205,7 +207,7 @@
                                 borderDash: [6, 6],
                                 label: {
                                     display: true,
-                                    content: 'Зона тона',
+                                    content: 'Вибрато',
                                     position: 'end',
                                     backgroundColor: 'rgba(255,0,0,0.5)'
                                 }
@@ -262,9 +264,119 @@
         timeChart = new Chart(timeCtx, timeChartConfig);
         freqChart = new Chart(freqCtx, freqChartConfig);
         pitchChart = new Chart(pitchCtx, pitchChartConfig);
+        function getVibratoFreq() {
+            const PITCH_RATE = 22; // Частота обновления высоты тона (Гц)
+            const VIBRATO_STDDEV_THRESHOLD = 0.002;
+            const SIZE = pitchChart.data.datasets[0].data.length;
+            const data = pitchChart.data.datasets[0].data;
+            
+            // 1. Проверка амплитуды вибрато
+            const mean = data.reduce((sum, val) => sum + val, 0) / SIZE;
+            const stdDev = Math.sqrt(data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / SIZE);
+            
+            if (stdDev < VIBRATO_STDDEV_THRESHOLD) {
+                return 0; // Слишком малое отклонение
+            }
+
+            // 2. Вычисление ACF с нормализацией
+            const c = new Array(SIZE).fill(0);
+            
+            for (let i = 0; i < SIZE; i++) {
+                for (let j = 0; j < SIZE - i; j++) {
+                    c[i] += (data[j] - mean) * (data[j + i] - mean);
+                }
+                // Нормализация
+                c[i] /= (SIZE - i);
+            }
+
+            // 3. Поиск пика в диапазоне вибрато (4-8 Гц)
+            const MIN_PERIOD = Math.floor(PITCH_RATE / 8); // 8 Гц -> 3 отсчетa
+            const MAX_PERIOD = Math.ceil(PITCH_RATE / 4);  // 4 Гц -> 5 отсчетов
+            
+            let maxVal = -Infinity;
+            let maxPos = MIN_PERIOD;
+            
+            for (let i = MIN_PERIOD; i <= Math.min(MAX_PERIOD, SIZE-1); i++) {
+                if (c[i] > maxVal) {
+                    maxVal = c[i];
+                    maxPos = i;
+                }
+            }
+
+            // 4. Параболическая интерполяция
+            const x1 = c[maxPos - 1];
+            const x2 = c[maxPos];
+            const x3 = c[maxPos + 1];
+            
+            const a = (x1 + x3 - 2*x2)/2;
+            const b = (x3 - x1)/2;
+            
+            let T0 = maxPos;
+            if (a !== 0) {
+                T0 = maxPos - b/(2*a);
+            }
+
+            // 5. Проверка значимости пика
+            if (maxVal < 0.4 * c[0]) { // Порог корреляции
+                return 0;
+            }
+
+            return PITCH_RATE / T0;
+        }
+        // function getVibratoFreq() {
+        //     // Implements the ACF2+ algorithm
+        //     let SIZE = pitchChart.data.datasets[0].length;
+        //     let data = pitchChart.data.datasets[0].data; 
+        //     let rms = 0;
+
+        //     for (let i = 0; i < SIZE; i++) {
+        //         let val = data[i];
+        //         rms += val*val;
+        //     }
+        //     rms = Math.sqrt(rms/SIZE);
+        //     if (rms < VIBRATO_RMS_TRESHOLD) { // not enough signal  
+        //         //this.rms = rms;     
+        //         return 0;
+        //     } 
+
+        //     // let r1 = 0, r2 = SIZE-1, thres = this.THRESHOLD;
+        //     // for (let i = 0; i < SIZE/2; i++)
+        //     //   if (Math.abs(this.buffer[i]) < thres) { r1 = i; break; }
+        //     // for (let i = 1; i < SIZE/2; i++)
+        //     //   if (Math.abs(this.buffer[SIZE-i]) < thres) { r2 = SIZE - i; break; }
+
+        //     // this.buffer = this.buffer.slice(r1, r2);
+        //     // SIZE = this.buffer.length;
+
+        //     let c = new Array(SIZE).fill(0);
+        //     for (let i = 0; i < SIZE; i++)
+        //     for (let j = 0; j < SIZE - i; j++)
+        //         c[i] = c[i] + data[j]*data[j + i];
+
+        //     let d=0; while (c[d] > c[d + 1]) d++;
+        //     let maxval = -1, maxpos = -1;
+        //     for (let i = d; i < SIZE; i++) {
+        //     if (c[i] > maxval) {
+        //         maxval = c[i];
+        //         maxpos = i;
+        //     }
+        //     }
+        //     let T0 = maxpos;
+
+        //     let x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
+        //     let a = (x1 + x3 - 2*x2)/2;
+        //     let b = (x3 - x1)/2;
+        //     if (a) T0 = T0 - b/(2*a);
+
+        //     //this.rms = rms;
+        //     //this.lastPitch = sampleRate/T0;
+        //     return VIBRATO_SAMPLE_RATE/T0;
+        
+        // }
+
         let k=0;
 
-        function updatePitchChart(currentPitch, prev_freq, next_freq, freq_plus30c, freq_minus30c) {
+        function updatePitchChart(currentPitch, prev_freq, next_freq, freq_plus30c, freq_minus30c, note_name) {
             //const note = frequencyToNote(currentPitch);
             //document.getElementById('currentNote').textContent = note;
             //console.log(currentPitch);
@@ -279,7 +391,8 @@
                 pitchChart.data.datasets[0].data.shift();  
                 pitchChart.config.options.scales.x.max = k;
             }
-
+            let vibrato_freq = getVibratoFreq();
+            vibrato_freq = (Math.round(vibrato_freq*100))/100;
             if ((prev_freq!=0) && (next_freq!=0)){
                 pitchChart.config.options.scales.y.max = next_freq;
                 pitchChart.config.options.scales.y.min = prev_freq; 
@@ -287,10 +400,15 @@
                 pitchChart.config.options.plugins.annotation.annotations.lowThreshold.yMax = freq_minus30c; 
                 pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMin = freq_plus30c; 
                 pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMax = freq_plus30c;  
+                pitchChart.config.options.plugins.annotation.annotations.highThreshold.label.content = "Зона " + note_name;
+                pitchChart.config.options.plugins.annotation.annotations.lowThreshold.label.content = "Вибрато " + vibrato_freq + "Гц";
             }
+            
+            //console.log(vibrato_freq);
             pitchChart.update('none');
         }
 
+    
         // function frequencyToNote(freq) {
         //     const A4 = 440;
         //     const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -331,7 +449,7 @@
                 const sampleRate = audioContext.sampleRate;
 
                 const totalBins = frequencyAnalyser.frequencyBinCount;
-                const binsToShow = Math.floor((MAX_FREQ_TO_DISPLAY / (sampleRate / 2)) * totalBins);
+                const binsToShow = totalBins;//Math.floor((MAX_FREQ_TO_DISPLAY / (sampleRate / 2)) * totalBins);
 
                 const freqLabels = Array.from(
                     { length: binsToShow },
@@ -352,7 +470,8 @@
                                         event.data.prev_note_frequency, 
                                         event.data.next_note_frequency,
                                         event.data.note_frequency_plus30c,
-                                        event.data.note_frequency_minus30c );
+                                        event.data.note_frequency_minus30c,
+                                        event.data.note_name );
                         console.log(event.data.note_name);
                         //console.log(event.data.frequency);
                     }
