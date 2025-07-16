@@ -87,29 +87,29 @@
             0: { // Баритон
                 name: "Баритон",
                 formants: [
-                    { freq: 500, label: "Низкая форманта" },
-                    { freq: 2400, label: "Высокая форманта" }
+                    { freq: 500, label: "Низкая" },
+                    { freq: 2400, label: "Высокая" }
                 ]
             },
             1: { // Тенор
                 name: "Тенор",
                 formants: [
-                    { freq: 650, label: "Низкая форманта" },
-                    { freq: 2700, label: "Высокая форманта" }
+                    { freq: 650, label: "Низкая" },
+                    { freq: 2700, label: "Высокая" }
                 ]
             },
             2: { // Альт
                 name: "Альт",
                 formants: [
-                    { freq: 600, label: "Низкая форманта" },
-                    { freq: 2900, label: "Высокая форманта" }
+                    { freq: 600, label: "Низкая" },
+                    { freq: 2900, label: "Высокая" }
                 ]
             },
             3: { // Сопрано
                 name: "Сопрано",
                 formants: [
-                    { freq: 800, label: "Низкая форманта" },
-                    { freq: 3500, label: "Высокая форманта" }
+                    { freq: 800, label: "Низкая" },
+                    { freq: 3500, label: "Высокая" }
                 ]
             }
         };
@@ -429,7 +429,7 @@
                         backgroundColor: 'rgba(0,0,0,0.7)',
                         color: 'white',
                         font: {
-                            size: 12,
+                            size: 8,
                             weight: 'bold'
                         }
                     }
@@ -441,7 +441,7 @@
                 type: 'label',
                 xValue: 100, // Левая позиция
                 yValue: 250, // Верхняя позиция
-                content: `Форманты: ${voiceFormants[voiceType].name}`,
+                content: `${voiceFormants[voiceType].name}`,
                 backgroundColor: 'rgba(30, 30, 30, 0.7)',
                 color: 'white',
                 font: {
