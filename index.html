@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Аудиовизуализация с AudioWorklet</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
         .chart-container {
             display: flex;
@@ -50,6 +51,8 @@
     </style>
 
     <script>
+        //Chart.register(ChartAnnotation);
+        //
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         
@@ -151,32 +154,72 @@
         };
 
         const pitchChartConfig = {
-        type: 'line',
-        data: {
-            datasets: [{
-            label: 'Основной тон (Hz)',
-            borderColor: 'rgb(255, 99, 132)',
-            data: []
-            }]
-        },
-        options: {
-            scales: {
-            y: {
-                // min: 50,
-                // max: 1000,
-                title: { 
-                    display: true,
-                    text: 'Частота (Гц)' }
+            type: 'line',
+            data: {
+                datasets: [{
+                label: 'Основной тон (Hz)',
+                borderColor: 'rgb(255, 99, 132)',
+                data: []
+                }]
             },
-            x: {
-                min: 0,
-                max: MAX_PITHCES_TO_DISPLAY,
-                title: { 
-                    display: true,
-                    text: 'Время' }
+            options: {
+                scales: {
+                y: {
+                    // min: 50,
+                    // max: 1000,
+                    title: { 
+                        display: true,
+                        text: 'Частота (Гц)' }
+                },
+                x: {
+                    min: 0,
+                    max: MAX_PITHCES_TO_DISPLAY,
+                    title: { 
+                        display: true,
+                        text: 'Время' }
+                }
+                }, 
+                plugins: {
+                    annotation: {
+                        annotations: {
+                            highThreshold: {
+                                type: 'line',
+                                yMin: 0,    // Значение Y для выделения
+                                yMax: 0,
+                                borderColor: 'green',
+                                borderWidth: 3,
+                                borderDash: [6, 6],
+                                label: {
+                                    display: true,
+                                    content: 'Зона тона',
+                                    position: 'end',
+                                    backgroundColor: 'rgba(255,0,0,0.5)'
+                                }
+                            },
+                            lowThreshold: {
+                                type: 'line',
+                                yMin: 0,    // Значение Y для выделения
+                                yMax: 0,
+                                borderColor: 'green',
+                                borderWidth: 3,
+                                borderDash: [6, 6],
+                                label: {
+                                    display: true,
+                                    content: 'Зона тона',
+                                    position: 'end',
+                                    backgroundColor: 'rgba(255,0,0,0.5)'
+                                }
+                            },
+                            // dynamicLine: {
+                            //     type: 'line',
+                            //     yMin: () => calculateThreshold_min(), // Функция вычисляющая значение
+                            //     yMax: () => calculateThreshold_max(),
+                            //     borderColor: 'purple'
+                            // }
+                        }
+                    }
+                }
             }
-            }
-        }
         };
 
         // Переменная для хранения всех сэмплов
@@ -221,7 +264,7 @@
         pitchChart = new Chart(pitchCtx, pitchChartConfig);
         let k=0;
 
-        function updatePitchChart(currentPitch, prev_freq, next_freq) {
+        function updatePitchChart(currentPitch, prev_freq, next_freq, freq_plus30c, freq_minus30c) {
             //const note = frequencyToNote(currentPitch);
             //document.getElementById('currentNote').textContent = note;
             //console.log(currentPitch);
@@ -239,7 +282,11 @@
 
             if ((prev_freq!=0) && (next_freq!=0)){
                 pitchChart.config.options.scales.y.max = next_freq;
-                pitchChart.config.options.scales.y.min = prev_freq;    
+                pitchChart.config.options.scales.y.min = prev_freq; 
+                pitchChart.config.options.plugins.annotation.annotations.lowThreshold.yMin = freq_minus30c; 
+                pitchChart.config.options.plugins.annotation.annotations.lowThreshold.yMax = freq_minus30c; 
+                pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMin = freq_plus30c; 
+                pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMax = freq_plus30c;  
             }
             pitchChart.update('none');
         }
@@ -301,8 +348,12 @@
 
                 pitchProcessor.port.onmessage = (event) => {
                     if (event.data.type === 'pitch') {
-                        updatePitchChart(event.data.frequency,event.data.prev_frequency, event.data.next_frequency );
-                        console.log(event.data.noteName);
+                        updatePitchChart(event.data.note_frequency,
+                                        event.data.prev_note_frequency, 
+                                        event.data.next_note_frequency,
+                                        event.data.note_frequency_plus30c,
+                                        event.data.note_frequency_minus30c );
+                        console.log(event.data.note_name);
                         //console.log(event.data.frequency);
                     }
                 };

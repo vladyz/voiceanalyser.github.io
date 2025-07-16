@@ -43,14 +43,18 @@ class PitchProcessor extends AudioWorkletProcessor {
         let noteFreq = this.frequencyFromNoteNumber(note);
         let next_freq = ((noteFreq>=this.maxPitch) || (noteFreq<=this.minPitch))? 0 : noteFreq* this.SEMITONE_COEFF;
         let prev_freq = ((noteFreq>=this.maxPitch) || (noteFreq<=this.minPitch))? 0 : noteFreq/this.SEMITONE_COEFF;
+        let noteFreq_plus30c = noteFreq *(1 + 30 * 0.000577);
+        let noteFreq_minus30c = noteFreq *(1 - 30 * 0.000577);
         //console.log(this.note);
         this.port.postMessage({
           type: 'pitch',
-          prev_frequency: prev_freq,
-          frequency: lastPitch,
-          next_frequency: next_freq,
-          noteName: noteName,
-          rms: this.rms
+          note_frequency: lastPitch,
+          prev_note_frequency: prev_freq,          
+          next_note_frequency: next_freq,
+          note_frequency_plus30c: noteFreq_plus30c,
+          note_frequency_minus30c: noteFreq_minus30c,
+          note_name: noteName,
+          //rms: this.rms
         });
         this.bufferIndex = 0;
       }
