@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Аудиовизуализация с AudioWorklet</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
         .chart-container {
             display: flex;
@@ -13,12 +15,14 @@
             gap: 20px;
             margin-top: 20px;
         }
+
         canvas {
             max-width: 100%;
             height: 400px;
             background: #f5f5f5;
             border-radius: 4px;
         }
+
         .controls {
             display: flex;
             gap: 10px;
@@ -26,12 +30,19 @@
         }
     </style>
 </head>
+
 <body>
     <div class="controls">
         <button id="startButton">Начать</button>
         <button id="stopButton" disabled>Остановить</button>
+        <select id="select-voice-list" name="options">
+            <option value="0">Баритон 500 2400</option>
+            <option value="1">Тенор 650 2700</option>
+            <option value="2">Альт 600 2900</option>
+            <option value="3">Сопрано 800 3500</option>
+        </select>
     </div>
-    
+
     <div class="chart-container">
         <canvas id="timeDomainChart" width="800" height="400"></canvas>
         <canvas id="frequencyDomainChart" width="800" height="400"></canvas>
@@ -51,29 +62,57 @@
     </style>
 
     <script>
-        //Chart.register(ChartAnnotation);
+        const MAX_FREQ_TO_DISPLAY = 20000;
+        const MAX_PITHCES_TO_DISPLAY = 50;
+        const VIBRATO_RMS_TRESHOLD = 0.002;
+        const VIBRATO_SAMPLE_RATE = 22;
+        const FFT_SIZE = 2048;
         //
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
-        
+        const selectVoiceTypeList = document.getElementById('select-voice-list');
+
         // Инициализация графиков
         const timeCtx = document.getElementById('timeDomainChart').getContext('2d');
         const freqCtx = document.getElementById('frequencyDomainChart').getContext('2d');
         const pitchCtx = document.getElementById('pitchDomainChart').getContext('2d');
-        
+
         let audioContext;
         let visualizerNode;
         let frequencyAnalyser;
         let freqDataArray;
         let updateInterval;
-        let timeChart;
-        let freqChart;
-        let pitchChart;
 
-        const MAX_FREQ_TO_DISPLAY = 20000;
-        const MAX_PITHCES_TO_DISPLAY = 50;
-        const VIBRATO_RMS_TRESHOLD = 0.002;
-        const VIBRATO_SAMPLE_RATE = 22;
+        const voiceFormants = {
+            0: { // Баритон
+                name: "Баритон",
+                formants: [
+                    { freq: 500, label: "Низкая форманта" },
+                    { freq: 2400, label: "Высокая форманта" }
+                ]
+            },
+            1: { // Тенор
+                name: "Тенор",
+                formants: [
+                    { freq: 650, label: "Низкая форманта" },
+                    { freq: 2700, label: "Высокая форманта" }
+                ]
+            },
+            2: { // Альт
+                name: "Альт",
+                formants: [
+                    { freq: 600, label: "Низкая форманта" },
+                    { freq: 2900, label: "Высокая форманта" }
+                ]
+            },
+            3: { // Сопрано
+                name: "Сопрано",
+                formants: [
+                    { freq: 800, label: "Низкая форманта" },
+                    { freq: 3500, label: "Высокая форманта" }
+                ]
+            }
+        };
 
         // Конфигурация графиков
         const timeChartConfig = {
@@ -159,7 +198,12 @@
                 },
                 animation: {
                     duration: 0
-                }
+                },
+                plugins: {
+                    annotation: {
+                        annotations: {} // Здесь будут динамические форманты
+                    }
+                },  
             }
         };
 
@@ -167,28 +211,30 @@
             type: 'line',
             data: {
                 datasets: [{
-                label: 'Основной тон (Hz)',
-                borderColor: 'rgb(255, 99, 132)',
-                data: []
+                    label: 'Основной тон (Hz)',
+                    borderColor: 'rgb(255, 99, 132)',
+                    data: []
                 }]
             },
             options: {
                 scales: {
-                y: {
-                    // min: 50,
-                    // max: 1000,
-                    title: { 
-                        display: true,
-                        text: 'Частота (Гц)' }
+                    y: {
+                        // min: 50,
+                        // max: 1000,
+                        title: {
+                            display: true,
+                            text: 'Частота (Гц)'
+                        }
+                    },
+                    x: {
+                        min: 0,
+                        max: MAX_PITHCES_TO_DISPLAY,
+                        title: {
+                            display: true,
+                            text: 'Время'
+                        }
+                    }
                 },
-                x: {
-                    min: 0,
-                    max: MAX_PITHCES_TO_DISPLAY,
-                    title: { 
-                        display: true,
-                        text: 'Время' }
-                }
-                }, 
                 plugins: {
                     annotation: {
                         annotations: {
@@ -232,6 +278,11 @@
             }
         };
 
+        // Инициализация графиков
+        let timeChart = new Chart(timeCtx, timeChartConfig);
+        let freqChart = new Chart(freqCtx, freqChartConfig);
+        let pitchChart = new Chart(pitchCtx, pitchChartConfig);
+
         // Переменная для хранения всех сэмплов
         let allSamples = [];
         //const CHUNK_SIZE = 512;
@@ -243,7 +294,7 @@
             try {
                 // Создаем AudioContext
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                
+
                 // Регистрируем процессор
                 await audioContext.audioWorklet.addModule('audio-processor.js');
                 console.log('AudioWorklet processor успешно загружен');
@@ -254,7 +305,7 @@
             }
         }
 
-                // Новый метод для загрузки аудиопроцессора
+        // Новый метод для загрузки аудиопроцессора
         async function initPitchWorklet() {
             try {
                 // Регистрируем процессор
@@ -268,27 +319,23 @@
             }
         }
 
-        // Инициализация графиков
-        timeChart = new Chart(timeCtx, timeChartConfig);
-        freqChart = new Chart(freqCtx, freqChartConfig);
-        pitchChart = new Chart(pitchCtx, pitchChartConfig);
         function getVibratoFreq() {
             const PITCH_RATE = 21.5; // Частота обновления высоты тона (Гц)
             const VIBRATO_STDDEV_THRESHOLD = 0.002;
             const SIZE = pitchChart.data.datasets[0].data.length;
             const data = pitchChart.data.datasets[0].data;
-            
+
             // 1. Проверка амплитуды вибрато
             const mean = data.reduce((sum, val) => sum + val, 0) / SIZE;
             const stdDev = Math.sqrt(data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / SIZE);
-            
+
             if (stdDev < VIBRATO_STDDEV_THRESHOLD) {
                 return 0; // Слишком малое отклонение
             }
 
             // 2. Вычисление ACF с нормализацией
             const c = new Array(SIZE).fill(0);
-            
+
             for (let i = 0; i < SIZE; i++) {
                 for (let j = 0; j < SIZE - i; j++) {
                     c[i] += (data[j] - mean) * (data[j + i] - mean);
@@ -300,11 +347,11 @@
             // 3. Поиск пика в диапазоне вибрато (4-8 Гц)
             const MIN_PERIOD = Math.floor(PITCH_RATE / 8); // 8 Гц -> 3 отсчетa
             const MAX_PERIOD = Math.ceil(PITCH_RATE / 4);  // 4 Гц -> 5 отсчетов
-            
+
             let maxVal = -Infinity;
             let maxPos = MIN_PERIOD;
-            
-            for (let i = MIN_PERIOD; i <= Math.min(MAX_PERIOD, SIZE-1); i++) {
+
+            for (let i = MIN_PERIOD; i <= Math.min(MAX_PERIOD, SIZE - 1); i++) {
                 if (c[i] > maxVal) {
                     maxVal = c[i];
                     maxPos = i;
@@ -315,13 +362,13 @@
             const x1 = c[maxPos - 1];
             const x2 = c[maxPos];
             const x3 = c[maxPos + 1];
-            
-            const a = (x1 + x3 - 2*x2)/2;
-            const b = (x3 - x1)/2;
-            
+
+            const a = (x1 + x3 - 2 * x2) / 2;
+            const b = (x3 - x1) / 2;
+
             let T0 = maxPos;
             if (a !== 0) {
-                T0 = maxPos - b/(2*a);
+                T0 = maxPos - b / (2 * a);
             }
 
             // 5. Проверка значимости пика
@@ -331,98 +378,81 @@
 
             return PITCH_RATE / T0;
         }
-        // function getVibratoFreq() {
-        //     // Implements the ACF2+ algorithm
-        //     let SIZE = pitchChart.data.datasets[0].length;
-        //     let data = pitchChart.data.datasets[0].data; 
-        //     let rms = 0;
 
-        //     for (let i = 0; i < SIZE; i++) {
-        //         let val = data[i];
-        //         rms += val*val;
-        //     }
-        //     rms = Math.sqrt(rms/SIZE);
-        //     if (rms < VIBRATO_RMS_TRESHOLD) { // not enough signal  
-        //         //this.rms = rms;     
-        //         return 0;
-        //     } 
-
-        //     // let r1 = 0, r2 = SIZE-1, thres = this.THRESHOLD;
-        //     // for (let i = 0; i < SIZE/2; i++)
-        //     //   if (Math.abs(this.buffer[i]) < thres) { r1 = i; break; }
-        //     // for (let i = 1; i < SIZE/2; i++)
-        //     //   if (Math.abs(this.buffer[SIZE-i]) < thres) { r2 = SIZE - i; break; }
-
-        //     // this.buffer = this.buffer.slice(r1, r2);
-        //     // SIZE = this.buffer.length;
-
-        //     let c = new Array(SIZE).fill(0);
-        //     for (let i = 0; i < SIZE; i++)
-        //     for (let j = 0; j < SIZE - i; j++)
-        //         c[i] = c[i] + data[j]*data[j + i];
-
-        //     let d=0; while (c[d] > c[d + 1]) d++;
-        //     let maxval = -1, maxpos = -1;
-        //     for (let i = d; i < SIZE; i++) {
-        //     if (c[i] > maxval) {
-        //         maxval = c[i];
-        //         maxpos = i;
-        //     }
-        //     }
-        //     let T0 = maxpos;
-
-        //     let x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
-        //     let a = (x1 + x3 - 2*x2)/2;
-        //     let b = (x3 - x1)/2;
-        //     if (a) T0 = T0 - b/(2*a);
-
-        //     //this.rms = rms;
-        //     //this.lastPitch = sampleRate/T0;
-        //     return VIBRATO_SAMPLE_RATE/T0;
-        
-        // }
-
-        let k=0;
-
+        let k = 0;
         function updatePitchChart(currentPitch, prev_freq, next_freq, freq_plus30c, freq_minus30c, note_name) {
-            //const note = frequencyToNote(currentPitch);
-            //document.getElementById('currentNote').textContent = note;
-            //console.log(currentPitch);
             if (currentPitch == 0)
                 return;
             pitchChart.data.datasets[0].data.push(currentPitch);
             pitchChart.data.labels.push(k);
             k++;
 
-            if (pitchChart.data.labels.length >MAX_PITHCES_TO_DISPLAY){
+            if (pitchChart.data.labels.length > MAX_PITHCES_TO_DISPLAY) {
                 pitchChart.data.labels.shift();
-                pitchChart.data.datasets[0].data.shift();  
+                pitchChart.data.datasets[0].data.shift();
                 pitchChart.config.options.scales.x.max = k;
             }
             let vibrato_freq = getVibratoFreq();
-            vibrato_freq = (Math.round(vibrato_freq*100))/100;
-            if ((prev_freq!=0) && (next_freq!=0)){
+            vibrato_freq = (Math.round(vibrato_freq * 100)) / 100;
+            if ((prev_freq != 0) && (next_freq != 0)) {
                 pitchChart.config.options.scales.y.max = next_freq;
-                pitchChart.config.options.scales.y.min = prev_freq; 
-                pitchChart.config.options.plugins.annotation.annotations.lowThreshold.yMin = freq_minus30c; 
-                pitchChart.config.options.plugins.annotation.annotations.lowThreshold.yMax = freq_minus30c; 
-                pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMin = freq_plus30c; 
-                pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMax = freq_plus30c;  
+                pitchChart.config.options.scales.y.min = prev_freq;
+                pitchChart.config.options.plugins.annotation.annotations.lowThreshold.yMin = freq_minus30c;
+                pitchChart.config.options.plugins.annotation.annotations.lowThreshold.yMax = freq_minus30c;
+                pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMin = freq_plus30c;
+                pitchChart.config.options.plugins.annotation.annotations.highThreshold.yMax = freq_plus30c;
                 pitchChart.config.options.plugins.annotation.annotations.highThreshold.label.content = "Зона " + note_name;
                 pitchChart.config.options.plugins.annotation.annotations.lowThreshold.label.content = "Вибрато " + vibrato_freq + "Гц";
             }
-            
+
             //console.log(vibrato_freq);
             pitchChart.update('none');
         }
 
-    
-        // function frequencyToNote(freq) {
-        //     const A4 = 440;
-        //     const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        //     const n = Math.round(12 * Math.log2(freq / A4)) + 57;
-        //     return notes[n % 12] + Math.floor(n/12);
-        // }
+        function updateFormantAnnotations(voiceType) {
+            const formants = voiceFormants[voiceType].formants;
+            const annotations = {};
+            
+            formants.forEach((formant, index) => {
+                const id = `formant${index}`;
+                annotations[id] = {
+                    type: 'line',
+                    scaleID: 'x',
+                    value: formant.freq,
+                    borderColor: `hsl(${index * 40}, 100%, 50%)`, // Разные цвета
+                    borderWidth: 3,
+                    borderDash: [6, 6],
+                    label: {
+                        display: true,
+                        content: formant.label,
+                        position: 'start',
+                        backgroundColor: 'rgba(0,0,0,0.7)',
+                        color: 'white',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        }
+                    }
+                };
+            });
+            
+            // Добавляем подпись типа голоса
+            annotations['voiceLabel'] = {
+                type: 'label',
+                xValue: 100, // Левая позиция
+                yValue: 250, // Верхняя позиция
+                content: `Форманты: ${voiceFormants[voiceType].name}`,
+                backgroundColor: 'rgba(30, 30, 30, 0.7)',
+                color: 'white',
+                font: {
+                    size: 14,
+                    weight: 'bold'
+                }
+            };
+            
+            freqChart.options.plugins.annotation.annotations = annotations;
+            freqChart.update();
+        }
 
         startButton.addEventListener('click', async () => {
             try {
@@ -435,24 +465,24 @@
                 if (!workletReady) {
                     throw new Error('Не удалось загрузить AudioWorklet');
                 }
-                
+
                 // Получаем доступ к микрофону
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: {        
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
                         echoCancellation: false,
                         noiseSuppression: false, //true
                         autoGainControl: false,  // Самое важное!
                         latency: 0.01  // Минимальная задержка //true 
                     }
                 });
-                
+
                 // Создаем узлы обработки
                 visualizerNode = new AudioWorkletNode(audioContext, 'audio-visualizer-processor');
                 pitchProcessor = new AudioWorkletNode(audioContext, 'pitch-processor');
                 frequencyAnalyser = audioContext.createAnalyser();
                 frequencyAnalyser.smoothingTimeConstant = 0.1;
 
-                frequencyAnalyser.fftSize = 2048; //512
+                frequencyAnalyser.fftSize = FFT_SIZE; //512
                 const freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
                 const sampleRate = audioContext.sampleRate;
 
@@ -464,7 +494,7 @@
                     (_, i) => Math.round(i * sampleRate / (2 * totalBins))
                 );
                 freqChart.data.labels = freqLabels;
-                
+
                 // Подключаем узлы
                 const source = audioContext.createMediaStreamSource(stream);
                 source.connect(visualizerNode);
@@ -475,49 +505,46 @@
                 pitchProcessor.port.onmessage = (event) => {
                     if (event.data.type === 'pitch') {
                         updatePitchChart(event.data.note_frequency,
-                                        event.data.prev_note_frequency, 
-                                        event.data.next_note_frequency,
-                                        event.data.note_frequency_plus30c,
-                                        event.data.note_frequency_minus30c,
-                                        event.data.note_name );
+                            event.data.prev_note_frequency,
+                            event.data.next_note_frequency,
+                            event.data.note_frequency_plus30c,
+                            event.data.note_frequency_minus30c,
+                            event.data.note_name);
                         console.log(event.data.note_name);
                         //console.log(event.data.frequency);
                     }
                 };
-                
+
                 // Настройка обработки данных
                 visualizerNode.port.onmessage = (event) => {
                     if (event.data.decsamples) {
                         //Добавляем новые сэмплы
                         allSamples = [...allSamples, ...event.data.decsamples];
-                        
+
                         // Если превысили максимальное количество - обрезаем начало
                         if (allSamples.length > MAX_SAMPLES) {
                             const removeCount = allSamples.length - MAX_SAMPLES;
                             allSamples = allSamples.slice(removeCount);
                         }
-                        
                         // Обновляем график
                         timeChart.data.datasets[0].data = allSamples;
                         timeChart.data.labels = allSamples.map((_, i) => i);
                         //console.log("new data!");
-
                         cnt++;
-                        if (cnt == 2){
+                        if (cnt == 2) {
                             timeChart.update();
                             frequencyAnalyser.getByteFrequencyData(freqDataArray);
                             freqChart.data.datasets[0].data = Array.from(freqDataArray.slice(0, binsToShow));
-                            freqChart.update();                            
-                            cnt=0;
+                            freqChart.update();
+                            cnt = 0;
                         }
-                        
                     }
                 };
-                
-                
+
+
                 startButton.disabled = true;
                 stopButton.disabled = false;
-                
+
             } catch (error) {
                 console.error('Ошибка:', error);
                 alert('Ошибка: ' + error.message);
@@ -538,6 +565,15 @@
             startButton.disabled = false;
             stopButton.disabled = true;
         });
+
+
+        selectVoiceTypeList.addEventListener('change', function() {
+            const selectedVoiceType = this.value;
+            updateFormantAnnotations(selectedVoiceType);
+        });
+
+        updateFormantAnnotations('0');
     </script>
 </body>
+
 </html>

@@ -2,7 +2,7 @@
 class AudioVisualizerProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        const DEC_CHUNK_SIZE = 128; 
+        const DEC_CHUNK_SIZE = 128;
         const DEC_FACTOR = 32;
         this.decchunkSize = DEC_CHUNK_SIZE; // Размер выходного блока
         this.decimationFactor = DEC_FACTOR; // Коэффициент децимации
@@ -12,7 +12,7 @@ class AudioVisualizerProcessor extends AudioWorkletProcessor {
         //this.rawbuffer = new Float32Array(this.rawchunkSize * 4); // Буфер с запасом
         //this.rawbufferIndex = 0;
         this.decbufferIndex = 0;
-        
+
         this.port.onmessage = (event) => {
             if (event.data === 'getConfig') {
                 this.port.postMessage({
@@ -29,20 +29,20 @@ class AudioVisualizerProcessor extends AudioWorkletProcessor {
 
         const inputData = input[0];
         const outputLength = inputData.length;//Math.floor(inputData.length / this.decimationFactor);
-        
+
         // Быстрая децимация через прямое копирование
         for (let i = 0; i < outputLength; i = i + this.decimationFactor) {
             //this.rawbuffer[this.rawbufferIndex++] = inputData[i];
 
             // 2. Децимация 
-            this.decbuffer[this.decbufferIndex++]= inputData[i];
-            
+            this.decbuffer[this.decbufferIndex++] = inputData[i];
+
             if (this.decbufferIndex >= this.decchunkSize) {
                 this.port.postMessage({
                     decsamples: this.decbuffer.slice(0, this.decchunkSize),
                     //rawsamples: this.rawbuffer.slice(0, this.rawchunkSize)
                 }, [this.decbuffer.buffer/*, this.rawbuffer.buffer*/]);
-                
+
                 // Создаем новый буфер вместо очистки
                 this.decbuffer = new Float32Array(this.decchunkSize * 4);
                 this.decbufferIndex = 0;
@@ -50,13 +50,11 @@ class AudioVisualizerProcessor extends AudioWorkletProcessor {
                 // this.rawbufferIndex = 0;
             }
         }
-        
+
         return true;
     }
 
-    
+
 }
-
-
 
 registerProcessor('audio-visualizer-processor', AudioVisualizerProcessor);
