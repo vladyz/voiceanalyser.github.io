@@ -115,7 +115,7 @@
         };
 
         const freqChartConfig = {
-            type: 'bar',
+            type: 'line',
             data: {
                 labels: [],
                 datasets: [{
@@ -123,8 +123,16 @@
                     data: [],
                     backgroundColor: 'rgba(54, 162, 235, 0.5)',
                     borderColor: 'rgba(54, 162, 235, 1)',
-                    // borderWidth: 3,
-                    // pointRadius: 3
+                    fill: true,
+                    // barPercentage: 1.0, // Столбцы занимают всю ширину интервала
+                    // categoryPercentage: 1.0, // Максимальная ширина
+                    // // shadowOffsetX: 2,
+                    // // shadowOffsetY: 2,
+                    // // shadowBlur: 5,
+                    // // shadowColor: 'rgba(0, 0, 0, 0.3)'
+                    borderWidth: 0,
+                    // //borderColor: 'rgba(0, 0, 0, 1)',
+                    pointRadius: 0
                 }]
             },
             options: {
@@ -132,7 +140,7 @@
                 scales: {
                     x: {
                         display: true,
-                        min: 100,
+                        min: 50,
                         max: MAX_FREQ_TO_DISPLAY,
                         title: {
                             display: true,
@@ -265,7 +273,7 @@
         freqChart = new Chart(freqCtx, freqChartConfig);
         pitchChart = new Chart(pitchCtx, pitchChartConfig);
         function getVibratoFreq() {
-            const PITCH_RATE = 22; // Частота обновления высоты тона (Гц)
+            const PITCH_RATE = 21.5; // Частота обновления высоты тона (Гц)
             const VIBRATO_STDDEV_THRESHOLD = 0.002;
             const SIZE = pitchChart.data.datasets[0].data.length;
             const data = pitchChart.data.datasets[0].data;
@@ -444,7 +452,7 @@
                 frequencyAnalyser = audioContext.createAnalyser();
                 frequencyAnalyser.smoothingTimeConstant = 0.1;
 
-                frequencyAnalyser.fftSize = 512; //512
+                frequencyAnalyser.fftSize = 8192; //512
                 const freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
                 const sampleRate = audioContext.sampleRate;
 
