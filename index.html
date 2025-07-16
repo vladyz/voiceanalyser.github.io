@@ -67,8 +67,8 @@
         let freqChart;
         let pitchChart;
 
-        const MAX_FREQ_TO_DISPLAY = 5000;
-        const MAX_PITHCES_TO_DISPLAY = 100;
+        const MAX_FREQ_TO_DISPLAY = 20000;
+        const MAX_PITHCES_TO_DISPLAY = 50;
 
         // Конфигурация графиков
         const timeChartConfig = {
@@ -118,7 +118,8 @@
                     data: [],
                     backgroundColor: 'rgba(54, 162, 235, 0.5)',
                     borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
+                    // borderWidth: 3,
+                    // pointRadius: 3
                 }]
             },
             options: {
@@ -126,12 +127,13 @@
                 scales: {
                     x: {
                         display: true,
-                        min: 0,
+                        min: 100,
                         max: MAX_FREQ_TO_DISPLAY,
                         title: {
                             display: true,
                             text: 'Частота (Гц)'
-                        }
+                        },
+                        type: 'logarithmic'
                     },
                     y: {
                         min: 0,
@@ -162,12 +164,16 @@
             y: {
                 // min: 50,
                 // max: 1000,
-                title: { text: 'Частота (Hz)' }
+                title: { 
+                    display: true,
+                    text: 'Частота (Гц)' }
             },
             x: {
                 min: 0,
                 max: MAX_PITHCES_TO_DISPLAY,
-                title: { text: 'Время' }
+                title: { 
+                    display: true,
+                    text: 'Время' }
             }
             }
         }
@@ -215,7 +221,7 @@
         pitchChart = new Chart(pitchCtx, pitchChartConfig);
         let k=0;
 
-        function updatePitchChart(currentPitch) {
+        function updatePitchChart(currentPitch, prev_freq, next_freq) {
             //const note = frequencyToNote(currentPitch);
             //document.getElementById('currentNote').textContent = note;
             //console.log(currentPitch);
@@ -229,6 +235,11 @@
                 pitchChart.data.labels.shift();
                 pitchChart.data.datasets[0].data.shift();  
                 pitchChart.config.options.scales.x.max = k;
+            }
+
+            if ((prev_freq!=0) && (next_freq!=0)){
+                pitchChart.config.options.scales.y.max = next_freq;
+                pitchChart.config.options.scales.y.min = prev_freq;    
             }
             pitchChart.update('none');
         }
@@ -268,7 +279,7 @@
                 frequencyAnalyser = audioContext.createAnalyser();
                 frequencyAnalyser.smoothingTimeConstant = 0.1;
 
-                frequencyAnalyser.fftSize = 2048; //512
+                frequencyAnalyser.fftSize = 512; //512
                 const freqDataArray = new Uint8Array(frequencyAnalyser.frequencyBinCount);
                 const sampleRate = audioContext.sampleRate;
 
@@ -290,7 +301,8 @@
 
                 pitchProcessor.port.onmessage = (event) => {
                     if (event.data.type === 'pitch') {
-                        updatePitchChart(event.data.frequency);
+                        updatePitchChart(event.data.frequency,event.data.prev_frequency, event.data.next_frequency );
+                        console.log(event.data.noteName);
                         //console.log(event.data.frequency);
                     }
                 };
